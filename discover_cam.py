@@ -14,8 +14,10 @@ ip_address = "192.168.31.241"
 port = "554"
 secure_rtsp_url = f"rtsps://{username}:{password}@{ip_address}:{port}/video/live?channel=1&subtype=1"
 
-# 2. File Paths for Session Data Storage
+# 2. File Paths & I/O Optimization Anchors
 JSON_LOG_FILE = "session_log.json"
+JSON_WRITE_INTERVAL = 2.0  # Optimize I/O by writing to disk every 2 seconds instead of every frame
+last_json_write_time = 0.0
 
 def save_database_to_json(db, start_time):
     """Encapsulates tracking states into structured JSON format on disk."""
@@ -31,7 +33,6 @@ def save_database_to_json(db, start_time):
     }
     
     for pid, data in db.items():
-        # Cleanly calculate real-time net production scores
         prod_score = (data["total_time_inside"] / total_elapsed) * 100 if total_elapsed > 0 else 0
         
         output_data["tracked_people"][str(pid)] = {
@@ -44,9 +45,9 @@ def save_database_to_json(db, start_time):
     with open(JSON_LOG_FILE, "w") as f:
         json.dump(output_data, f, indent=4)
 
-# 3. Initialize AI Model
-print("[+] Loading YOLOv8 Object Detection Model...")
-model = YOLO("yolov8n.pt") 
+# 3. Initialize High-Performance AI Model
+print("[+] Loading YOLO11 Object Detection Model...")
+model = YOLO("yolo11n.pt")  # Upgraded model architecture optimized for Jetson Nano Orin deployment
 
 # 4. State Management Preparation
 person_database = {}
@@ -67,7 +68,7 @@ if not cap.isOpened():
 window_name = "AI Productivity & Presence Tracker"
 cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
-print("[+] Tracking Active. Writing real-time sessions directly to session_log.json...")
+print("[+] Tracking Active. JSON data throttled to 2-second intervals to maximize FPS...")
 
 try:
     while True:
@@ -79,11 +80,11 @@ try:
         current_time = time.time()
         total_elapsed_shift = current_time - SHIFT_START_TIME
 
-        # Run YOLOv8 tracking on humans (Class 0)
+        # Run YOLO11 tracking on humans (Class 0)
         results = model.track(frame, persist=True, classes=[0], verbose=False)
         active_ids_this_frame = set()
 
-        if results[0].boxes.id is not None:
+        if results and results[0].boxes.id is not None:
             boxes = results[0].boxes.xyxy.int().cpu().tolist()
             track_ids = results[0].boxes.id.int().cpu().tolist()
 
@@ -131,8 +132,10 @@ try:
                     leave_time = datetime.datetime.now().strftime("%H:%M:%S")
                     print(f"[➔ LEAVE] Person ID {pid} exited at {leave_time}")
         
-        # DYNAMIC LIVE WRITING: Dump states directly into the JSON file on every loop pass
-        save_database_to_json(person_database, SHIFT_START_TIME)
+        # Optimized JSON writing interval check
+        if current_time - last_json_write_time >= JSON_WRITE_INTERVAL:
+            save_database_to_json(person_database, SHIFT_START_TIME)
+            last_json_write_time = current_time
 
         cv2.imshow(window_name, frame)
 
