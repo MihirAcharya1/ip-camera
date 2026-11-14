@@ -96,7 +96,7 @@ try:
         total_elapsed_shift = current_time - SHIFT_START_TIME
 
         # Run high-performance tracking (Class 0: Person)
-        results = model.track(frame, persist=True, classes=, verbose=False, device=device)
+        results = model.track(frame, persist=True, classes=[0], verbose=False, device=device)
         active_ids_this_frame = set()
 
         if results and results.boxes.id is not None:
